@@ -1,0 +1,114 @@
+================================================================================
+Appcelerator Titanium Diagnostics Build Log
+The contents of this file are useful to send to Appcelerator Support if
+reporting an issue to help us understand your environment, build settings
+and aid in debugging. Please attach this log to any issue that you report.
+================================================================================
+
+Starting build at 09/12/11 10:26
+
+Build details:
+
+   timestamp=07/21/11 09:36
+   version=1.7.2
+   githash=97c3689
+
+
+Script arguments:
+   /Library/Application Support/Titanium/mobilesdk/osx/1.7.2/iphone/builder.py
+   simulator
+   4.3
+   /Users/anthonynystrom/Documents/TitaniumStudioWorkspace/SimQle
+   com.7touchgroup.simqleipad
+   SimQle
+   ipad
+   ipad
+   
+
+Building from: /Library/Application Support/Titanium/mobilesdk/osx/1.7.2/iphone
+Platform: Darwin Kernel Version 11.2.0: Tue Aug  9 20:54:00 PDT 2011; root:xnu-1699.24.8~1/RELEASE_X86_64
+
+Xcode path is: /Developer
+
+
+githash=97c3689, existing_git_hash=97c3689
+writing contents of /Users/anthonynystrom/Documents/TitaniumStudioWorkspace/SimQle/build/iphone/project.xcconfig:
+
+TI_VERSION=1.7.2
+TI_SDK_DIR=/Library/Application Support/Titanium/mobilesdk/osx/$(TI_VERSION)/iphone
+TI_APPID=com.7touchgroup.simqleipad
+OTHER_LDFLAGS[sdk=iphoneos*]=$(inherited) -weak_framework iAd
+OTHER_LDFLAGS[sdk=iphonesimulator*]=$(inherited) -weak_framework iAd
+#include "module"
+
+old contents
+
+
+Generated the following stylecode code:
+
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+	<dict>
+		<key>classes</key>
+		<dict>
+</dict>
+
+		<key>classes_density</key>
+		<dict>
+</dict>
+
+		<key>ids</key>
+		<dict>
+</dict>
+
+		<key>ids_density</key>
+		<dict>
+</dict>
+
+		<key>tags</key>
+		<dict>
+</dict>
+
+		<key>tags_density</key>
+		<dict>
+</dict>
+
+	</dict>
+</plist>
+Starting Xcode compile with the following arguments:
+
+    xcodebuild
+    -target
+    SimQle-iPad
+    -configuration
+    Debug
+    -sdk
+    iphonesimulator4.3
+    GCC_PREPROCESSOR_DEFINITIONS=__LOG__ID__=20113f1b-6093-453b-afc8-25e50c7140ee DEPLOYTYPE=development TI_DEVELOPMENT=1 DEBUG=1 TI_VERSION=1.7.2 
+    IPHONEOS_DEPLOYMENT_TARGET=3.2
+    TARGETED_DEVICE_FAMILY=2
+    VALID_ARCHS=armv6 armv7 i386
+
+app_id = com.7touchgroup.simqleipad
+
+
+Build settings from command line:
+    GCC_PREPROCESSOR_DEFINITIONS = __LOG__ID__=20113f1b-6093-453b-afc8-25e50c7140ee DEPLOYTYPE=development TI_DEVELOPMENT=1 DEBUG=1 TI_VERSION=1.7.2 
+    IPHONEOS_DEPLOYMENT_TARGET = 3.2
+    SDKROOT = iphonesimulator4.3
+    TARGETED_DEVICE_FAMILY = 2
+    VALID_ARCHS = armv6 armv7 i386
+
+xcodebuild: error: The project 'SimQlePad.xcodeproj' does not contain a target named 'SimQle-iPad'.
+EXIT CODE WAS: 65
+
+Exception detected in script:
+Traceback (most recent call last):
+  File "/Library/Application Support/Titanium/mobilesdk/osx/1.7.2/iphone/builder.py", line 1148, in main
+    execute_xcode("iphonesimulator%s" % link_version,["GCC_PREPROCESSOR_DEFINITIONS=__LOG__ID__=%s DEPLOYTYPE=development TI_DEVELOPMENT=1 DEBUG=1 TI_VERSION=%s %s" % (log_id,sdk_version,debugstr)],False)
+  File "/Library/Application Support/Titanium/mobilesdk/osx/1.7.2/iphone/builder.py", line 1066, in execute_xcode
+    output = run.run(args,False,False,o)
+  File "/Library/Application Support/Titanium/mobilesdk/osx/1.7.2/iphone/run.py", line 39, in run
+    sys.exit(rc)
+SystemExit: 65

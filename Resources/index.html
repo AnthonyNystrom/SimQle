@@ -1,0 +1,767 @@
+<!doctype html>
+<html>
+
+<head>
+  <title>SimQle</title>
+  
+  <style type="text/css">
+    body {
+      margin: 0;
+      overflow: hidden;
+      background-color: rgba(0, 0, 0, 0.8);
+    }
+    
+
+    .formula {
+      -moz-transition: top 200ms ease-out;
+      -o-transition: top 200ms ease-out;
+      -webkit-transition: top 200ms ease-out;
+      position: absolute;
+      text-align: center;
+      top: -40px;
+      transition: top 200ms ease-out;
+      width: 100%;
+    }
+    .formula.input-shown {
+      top: 10px;
+      
+    }
+
+    .formula-input {
+      background-color: rgba(255, 255, 255, 0.9);
+      border: 1px solid rgba(128, 128, 128, 0.5);
+      font: 20px Consolas, Monaco, monospace;
+      outline: none;
+      text-align: center;
+      width: 99%;
+      
+    }
+    
+    .formula-preview {
+      background-color: rgba(255, 255, 255, 0.9);
+      border: 1px solid rgba(128, 128, 128, 0.5);
+      display: inline-block;
+      font: bold 30px "Times New Roman", serif;
+      margin-top: 10px;
+      padding: 0 5px;
+            -moz-box-shadow: 0 0 8px rgba(82, 168, 236, .5);
+      -webkit-box-shadow: 0 0 8px rgba(82, 168, 236, .5);
+      box-shadow: 0 0 8px rgba(82, 168, 236, .5);
+    }
+    
+    .formula-input:focus,
+    .formula-preview:hover {
+      -moz-box-shadow: 0 0 8px rgba(82, 168, 236, .5);
+      -webkit-box-shadow: 0 0 8px rgba(82, 168, 236, .5);
+      box-shadow: 0 0 8px rgba(82, 168, 236, .5);
+    }
+
+  </style>
+
+  <script src="jquery-1.5.2.min.js"></script>
+  <script src="jquery.mousewheel.min.js"></script>
+
+</head>
+
+<body>
+  <canvas class="canvas"></canvas>
+  
+  <div class="formula">
+    <input type="text" class="formula-input" value="y = \sin x + \sin \pi x + \sin \pi ^ 2 x" disabled="disabled"><br>
+    <div class="formula-preview">
+      <i>y</i> = <span class="formula-preview-y"></span>
+    </div>
+  </div>
+
+  
+  <script>
+    function Parser() {
+    }
+    
+    Parser.prototype.parse = function(input, opt_position, opt_skipper) {
+      var result = this.parseInternal(
+          input, opt_position || 0, opt_skipper || new Skipper());
+      if (!result) {
+        return null;
+      }
+      if (this.handler_) {
+        result.returnValue = this.handler_(result.returnValue);
+      }
+      return result;
+    };
+
+    Parser.prototype.call = function(handler) {
+      this.handler_ = handler;
+      return this;
+    };
+    
+    function Skipper() {
+      this.space_ = /\s/;
+    }
+    
+    Skipper.prototype.skip = function(input, position) {
+      for (; position < input.length; position++) {
+        if (!this.space_.test(input[position])) {
+          break;
+        }
+      }
+      return position;
+    }
+    
+    function ParserBuilder() {
+    }
+    
+    ParserBuilder.coerce = function(parser) {
+      if (parser.constructor == Parser) {
+        return parser;
+      }
+
+      if (typeof parser == 'string') {
+        var returnValue = parser;
+        parser = new Parser();
+        parser.parseInternal = function(input, position) {
+          if (input.substr(position, returnValue.length) != returnValue) {
+            return null;
+          }
+          return {
+            position: position + returnValue.length,
+            returnValue: returnValue
+          };
+        };
+        return parser;
+      }
+      
+      if (parser.constructor == RegExp) {
+        var regExp = parser;
+        parser = new Parser();
+        parser.regExp_ = new RegExp('^' + regExp.source);
+        parser.parseInternal = function(input, position) {
+          var match = this.regExp_.exec(input.substr(position));
+          return match ? {
+            position: position + match[0].length,
+            returnValue: match[0]
+          } : null;
+        };
+        return parser;
+      }
+
+      throw new Error();
+    }
+
+    ParserBuilder.and = function() {
+      var parsers = Array.prototype.slice.call(arguments);
+      var parser = new Parser();
+      parser.parseInternal = function(input, position, skipper) {
+        position = skipper.skip(input, position);
+
+        var returnValue = [];
+        if (!parsers.every(function(parser) {
+          var result = ParserBuilder.coerce(parser).parse(
+            input, position, skipper);
+
+          if (!result) {
+            return false;
+          }
+          
+          position = skipper.skip(input, result.position);
+          returnValue.push(result.returnValue);
+          return true;
+        })) {
+          return null;
+        }
+        
+        return {
+          position: position,
+          returnValue: returnValue
+        };
+      }
+      return parser;
+    };
+    
+    ParserBuilder.or = function() {
+      var parsers = Array.prototype.slice.call(arguments);
+      var parser = new Parser();
+      parser.parseInternal = function(input, position, skipper) {
+        position = skipper.skip(input, position);
+
+        var returnValue;
+        if (!parsers.some(function(parser) {
+          var result = ParserBuilder.coerce(parser).parse(
+            input, position, skipper);
+
+          if (!result) {
+            return false;
+          }
+          
+          position = skipper.skip(input, result.position);
+          returnValue = result.returnValue;
+          return true;
+        })) {
+          return null;
+        }
+        
+        return {
+          position: position,
+          returnValue: returnValue
+        };
+      }
+      return parser;
+    };
+
+    ParserBuilder.declare = function() {
+      var parser = new Parser();
+      parser.define = function(definition) {
+        this.definition_ = definition;
+      };
+      parser.parseInternal = function(input, position, skipper) {
+        return this.definition_.parse(input, position, skipper);
+      };
+      return parser;
+    };
+    
+    ParserBuilder.any = function(repeatedParser) {
+      var parser = new Parser();
+      parser.parseInternal = function(input, position, skipper) {
+        var returnValue = [];
+        while (true) {
+          var result = ParserBuilder.coerce(repeatedParser).parse(
+              input, position, skipper);
+          if (!result) {
+            return {
+              position: position,
+              returnValue: returnValue
+            };
+          }
+          
+          position = skipper.skip(input, result.position);
+          returnValue.push(result.returnValue);
+        }
+      };
+      return parser;
+    };
+    
+    ParserBuilder.maybe = function(maybeParser) {
+      var parser = new Parser();
+      parser.parseInternal = function(input, position, skipper) {
+        var result = ParserBuilder.coerce(maybeParser).parse(
+            input, position, skipper);
+
+        return result ? {
+          position: result.position,
+          returnValue: result.returnValue
+        } : {
+          position: position,
+          returnValue: null
+        };
+      };
+      return parser;
+    };
+
+    function Literal(value) {
+      this.value_ = value;
+    }
+    
+    Literal.prototype.evaluate = function() {
+      return this.value_;
+    }
+    
+    Literal.prototype.toHtml = function() {
+      return this.value_.toString();
+    }
+
+    function Constant(name, value) {
+      this.name_ = name;
+      this.value_ = value;
+    }
+    
+    Constant.prototype.evaluate = function() {
+      return this.value_;
+    }
+    
+    Constant.prototype.toHtml = function() {
+      return '<i>' + this.name_ + '</i>';
+    }
+    
+    function X() {
+    }
+    
+    X.prototype.evaluate = function(x) {
+      return x;
+    }
+    
+    X.prototype.toHtml = function() {
+      return '<i>x</i>';
+    }
+    
+    function UnaryFunction(name, argument, evaluate) {
+      this.name_ = name;
+      this.argument_ = argument;
+      this.evaluate_ = evaluate;
+    }
+    
+    UnaryFunction.prototype.evaluate = function(x) {
+      return this.evaluate_(this.argument_.evaluate(x));
+    }
+    
+    UnaryFunction.prototype.toHtml = function() {
+      return this.name_ + ' ' + this.argument_.toHtml();
+    }
+    
+    function UnaryOperator(name, argument, evaluate) {
+      this.name_ = name;
+      this.argument_ = argument;
+      this.evaluate_ = evaluate;
+    }
+    
+    UnaryOperator.prototype.evaluate = function(x) {
+      return this.evaluate_(this.argument_.evaluate(x));
+    }
+    
+    UnaryOperator.prototype.toHtml = function() {
+      return this.name_ + this.argument_.toHtml();
+    }
+    
+    function BinaryOperator(name, leftArgument, rightArgument, evaluate) {
+      this.name_ = name;
+      this.leftArgument_ = leftArgument;
+      this.rightArgument_ = rightArgument;
+      this.evaluate_ = evaluate;
+    }
+    
+    BinaryOperator.prototype.evaluate = function(x) {
+      return this.evaluate_(
+          this.leftArgument_.evaluate(x), this.rightArgument_.evaluate(x));
+    }
+    
+    BinaryOperator.prototype.toHtml = function() {
+      return this.leftArgument_.toHtml() +
+          (this.name_ ? ' ' + this.name_ + ' ' : '') + 
+          this.rightArgument_.toHtml();
+    }
+
+    function PowerOperator(base, exponent) {
+      this.base_ = base;
+      this.exponent_ = exponent;
+    }
+    
+    PowerOperator.prototype.evaluate = function(x) {
+      return Math.pow(this.base_.evaluate(x), this.exponent_.evaluate(x));
+    }
+    
+    PowerOperator.prototype.toHtml = function() {
+      return this.base_.toHtml() +
+          '<sup>' + this.exponent_.toHtml() + '</sup>';
+    }
+
+    var _ = ParserBuilder;
+    
+    var expression = _.declare();
+    var multiplyOrDivide = _.declare();
+    
+    var literal = _.or(
+      /\d+\.\d+/,
+      /\d+/
+    ).call(function(value) {
+      return new Literal(parseFloat(value));
+    });
+    
+    var constant = _.or('e', '\\pi').call(function(value) {
+      return new Constant(
+          value == 'e' ? 'e' : '&pi;', value == 'e' ? Math.E : Math.PI);
+    });
+    
+    var x = _.coerce('x').call(function() {
+      return new X();
+    });
+    
+    var functionCall = _.and(
+      _.or('\\sin', '\\cos'),
+      multiplyOrDivide
+    ).call(function(value) {
+      return new UnaryFunction(
+          value[0].substr(1), 
+          value[1], 
+          value[0] == '\\sin' ? Math.sin : Math.cos);
+    });
+    
+    var brackets = _.and('{', expression, '}').call(function(value) {
+      return value[1];
+    });
+
+    var basic = _.or(
+      literal,
+      constant,
+      x,
+      functionCall,
+      brackets
+    );
+    
+    function negate(value) {
+      return -value;
+    }
+    
+    function identity(value) {
+      return value;
+    }
+    
+    var unaryMinusOrPlus = _.and(
+      _.maybe(/[-+]/),
+      basic
+    ).call(function(value) {
+      return value[0] ? 
+          new UnaryOperator(
+              value[0], value[1], value[0] == '-' ? negate : identity) : 
+          value[1];
+    });
+    
+    var raise = _.and(
+      basic,
+      _.maybe(
+        _.and(
+          '^',
+          unaryMinusOrPlus
+        )
+      )
+    ).call(function(value) {
+      return value[1] ? new PowerOperator(value[0], value[1][1]) : value[0];
+    });
+    
+    function multiply(left, right) {
+      return left * right;
+    }
+    
+    function divide(left, right) {
+      return left / right;
+    }
+    
+    multiplyOrDivide.define(
+      _.and(
+        _.maybe(/[-+]/),
+        raise,
+        _.any(
+          _.and(
+            _.or('*', '/', ''),
+            raise
+          )
+        )
+      ).call(function(value) {
+        var returnValue = value[2].reduce(function(left, right) {
+          return new BinaryOperator(
+              right[0], left, right[1], right[0] == '/' ? divide : multiply);
+        }, value[1]);
+        return value[0] ? 
+            new UnaryOperator(
+                value[0], returnValue, value[0] == '-' ? negate : identity) : 
+            returnValue;
+      })
+    );
+
+    function add(left, right) {
+      return left + right;
+    }
+    
+    function subtract(left, right) {
+      return left - right;
+    }
+    
+    var addOrSubtract = _.and(
+      multiplyOrDivide,
+      _.any(
+        _.and(
+          _.or('+', '-'),
+          multiplyOrDivide
+        )
+      )
+    ).call(function(value) {
+      return value[1].reduce(function(left, right) {
+        return new BinaryOperator(
+            right[0], left, right[1], right[0] == '+' ? add : subtract);
+      }, value[0]);
+    });
+    
+    expression.define(addOrSubtract);
+    
+    var y = _.and('y', '=', expression).call(function(value) {
+      return value[2];
+    });
+
+    var canvasElement = $('.canvas')[0];
+    canvasElement.width = window.innerWidth;
+    canvasElement.height = window.innerHeight;
+    var context = canvasElement.getContext('2d');
+
+    var pixelsPerUnit = 64;
+    
+    var canvasWidthInPixels = canvasElement.offsetWidth;
+    var canvasHeightInPixels = canvasElement.offsetHeight;
+    
+    var viewportXInUnits = -canvasWidthInPixels / 2 / pixelsPerUnit;
+    var viewportYInUnits = canvasHeightInPixels / 2 / pixelsPerUnit;
+    
+    function xInPixelsToUnits(xInPixels) {
+      return xInPixels / pixelsPerUnit + viewportXInUnits;
+    }
+    
+    function yInPixelsToUnits(yInPixels) {
+      return viewportYInUnits - yInPixels / pixelsPerUnit;
+    }
+    
+    function xInUnitsToPixels(xInUnits) {
+      return (xInUnits - viewportXInUnits) * pixelsPerUnit;
+    }
+    
+    function yInUnitsToPixels(yInUnits) {
+      return (viewportYInUnits - yInUnits) * pixelsPerUnit;
+    }
+    
+    function paintAxes() {
+      context.strokeStyle = 'rgba(192, 192, 192, 0.2)';
+      context.beginPath();
+
+      var yInPixels = yInUnitsToPixels(0);
+      context.moveTo(0, yInPixels);
+      context.lineTo(canvasWidthInPixels, yInPixels);
+      
+      var xInPixels = xInUnitsToPixels(0);
+      context.moveTo(xInPixels, 0);
+      context.lineTo(xInPixels, canvasHeightInPixels);
+
+      context.stroke();
+    }
+    
+    function isUndefined(number) {
+      return isNaN(number) || 
+          number == Number.NEGATIVE_INFINITY || 
+          number == Number.POSITIVE_INFINITY;
+    }
+
+    var f;
+    function paintFunction() {
+      context.strokeStyle = 'rgba(82, 168, 236, .9)';
+      context.beginPath();
+      
+      var wasUndefined = true;
+      for (var xInPixels = 0; xInPixels < canvasWidthInPixels; xInPixels++) {
+        var yInUnits = f(xInPixelsToUnits(xInPixels));
+        if (isUndefined(yInUnits)) {
+          wasUndefined = true;
+          continue;
+        }
+        
+        if (wasUndefined) {
+          wasUndefined = false;
+          context.moveTo(xInPixels, yInUnitsToPixels(yInUnits));
+        } else {
+          try {
+          context.lineTo(xInPixels, yInUnitsToPixels(yInUnits));
+          } catch (e) {
+            debugger;
+          }
+        }
+      }
+      
+      context.stroke();
+    }
+
+    var lastMouseXInPixels;
+    var lastMouseYInPixels;
+    
+    function paintCursor() {
+      if (typeof lastMouseXInPixels == 'undefined') {
+        return;
+      }
+    
+      var cursorXInPixels = lastMouseXInPixels;
+      var cursorXInUnits = xInPixelsToUnits(cursorXInPixels);
+      var cursorYInUnits = f(cursorXInUnits);
+      if (isUndefined(cursorYInUnits)) {
+        return;
+      }
+      var cursorYInPixels = yInUnitsToPixels(cursorYInUnits);
+      
+      context.strokeStyle = 'rgba(192, 192, 192, 0.2)';
+      context.beginPath();
+      context.moveTo(cursorXInPixels, cursorYInPixels);
+      context.lineTo(xInUnitsToPixels(0), cursorYInPixels);
+      context.moveTo(cursorXInPixels, cursorYInPixels);
+      context.lineTo(cursorXInPixels, yInUnitsToPixels(0));
+      context.stroke();
+      
+      var DOT_RADIUS = 4;
+
+      context.fillStyle = 'rgb(224, 224, 224)';
+      context.beginPath();
+      context.arc(
+          cursorXInPixels, cursorYInPixels, DOT_RADIUS, 0, 2 * Math.PI, false);
+      context.fill();
+
+      context.strokeStyle = 'rgb(0, 0, 0)';
+      context.beginPath();
+      context.arc(
+          cursorXInPixels, cursorYInPixels, DOT_RADIUS, 0, 2 * Math.PI, false);
+      context.stroke();
+
+      var digitCount = Math.ceil(Math.log(pixelsPerUnit) / Math.LN10);
+      context.fillStyle = 'rgb(255, 255, 255)';
+      context.font = '12px Tahoma, Helvetica, Arial, sans-serif';
+      context.textAlign = 'center';
+      context.textBaseline = 'top';
+      context.fillText(
+          cursorXInUnits.toFixed(digitCount), 
+          cursorXInPixels, 
+          yInUnitsToPixels(0));
+      context.textAlign = 'right';
+      context.textBaseline = 'middle';
+      context.fillText(
+          cursorYInUnits.toFixed(digitCount), 
+          xInUnitsToPixels(0), 
+          cursorYInPixels);
+    }
+    
+    function paint() {
+      context.clearRect(0, 0, canvasWidthInPixels, canvasHeightInPixels);
+      paintAxes();
+      if (f) {
+        paintFunction();
+        paintCursor();
+      }
+    }
+
+    function parseAndPaint() {
+      var formula = $('.formula-input').val();
+      var parseResult = y.parse(formula);
+      if (parseResult && parseResult.position == formula.length) {
+        var yExpression = parseResult.returnValue;
+        $('.formula-preview-y').html(yExpression.toHtml());
+        f = function(x) {
+          return yExpression.evaluate(x);
+        };
+      } else {
+        $('.formula-preview-y').html('...');
+        f = null;
+      }
+      paint();
+    }
+    
+    parseAndPaint();
+
+    var dragging = false;
+    $(canvasElement).mousedown(function(event) {
+      if (event.which == 1) {
+        event.preventDefault();
+        $(canvasElement).addClass('dragging');
+        dragging = true;
+        lastMouseXInPixels = event.clientX;
+        lastMouseYInPixels = event.clientY;
+      }
+    });
+    $(canvasElement).mousemove(function(event) {
+      if (dragging) {
+        viewportXInUnits -= 
+            (event.clientX - lastMouseXInPixels) / pixelsPerUnit;
+        viewportYInUnits += 
+            (event.clientY - lastMouseYInPixels) / pixelsPerUnit;
+      }
+
+      lastMouseXInPixels = event.clientX;
+      lastMouseYInPixels = event.clientY;
+      paint();
+    });
+    $(document.body).mouseup(function(event) {
+      $(canvasElement).removeClass('dragging');
+      dragging = false;
+    });
+    $(canvasElement).mousewheel(function(event, delta) {
+      var mouseXInUnits = xInPixelsToUnits(event.clientX);
+      var mouseYInUnits = yInPixelsToUnits(event.clientY);
+      var ZOOM_FACTOR = 1;
+      pixelsPerUnit *= delta > 0 ? ZOOM_FACTOR : 1 / ZOOM_FACTOR;
+      viewportXInUnits = mouseXInUnits - event.clientX / pixelsPerUnit;
+      viewportYInUnits = mouseYInUnits + event.clientY / pixelsPerUnit;
+      paint();
+    });
+    
+    var formulaInputShown = false;
+    $('.formula-preview').click(function() {
+      formulaInputShown = !formulaInputShown;
+      if (formulaInputShown) {
+        $('.formula-input').attr('disabled', '').focus();
+        $('.formula').addClass('input-shown');
+      } else {
+        $('.formula-input').attr('disabled', 'disabled');
+        $('.formula').removeClass('input-shown');
+      }
+    });
+    
+    $('.formula-input')
+      .bind('input', function() {
+        parseAndPaint();
+      })
+      .keypress(function(event) {
+        if (event.which == 13) {
+          $('.formula-input').attr('disabled', 'disabled');
+          $('.formula').removeClass('input-shown');
+          parseAndPaint();
+        }
+      });
+  </script>
+  
+<script>
+var touchToMouse = function(event) {
+	    
+	    var touch = event.changedTouches[0];
+    	var type = "";
+    
+	if (event.touches.length >= 2) {
+
+
+    	switch (event.type) {
+    	case "touchstart": 
+        	type ="mousedown"; break;
+    	case "touchmove":  
+        	type="mousemove"; break;
+    	case "touchend":   
+       		type="mouseup"; break;
+        default: 
+			return;
+     	}   	
+	
+	
+	} else {
+	
+
+
+    	switch (event.type) {
+    	//case "touchstart": 
+        	//type ="mousedown"; break;
+    	case "touchmove":  
+       		type="mousemove"; break;
+    	case "touchend":   
+       		type="mouseup"; break;
+		default: 
+			return;
+	}
+}
+
+    
+    var simulatedEvent = document.createEvent("MouseEvent");
+    simulatedEvent.initMouseEvent(type, true, true, window, 1, 
+            touch.screenX, touch.screenY, 
+            touch.clientX, touch.clientY, false, 
+            false, false, false, 0, null);
+    
+    touch.target.dispatchEvent(simulatedEvent);
+    event.preventDefault();
+
+};
+
+document.ontouchstart = touchToMouse;
+document.ontouchmove = touchToMouse;
+document.ontouchend = touchToMouse;
+document.ontouchcancel = touchToMouse;
+
+</script>
+    
+</body>
+
+</html>
